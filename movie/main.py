@@ -7,6 +7,7 @@ import pandas as pd
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_qdrant import QdrantVectorStore
 from langchain.chains import ConversationalRetrievalChain
+from langchain.prompts import PromptTemplate
 
 # ---- secrets (works both locally via .env and on Streamlit Cloud via st.secrets) ----
 if "QDRANT_URL" in st.secrets:
@@ -20,7 +21,7 @@ else:
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # ---- LLM + Embeddings ----
-llm = ChatOpenAI(model="gpt-4o-mini", api_key=OPENAI_API_KEY, temperature=0)
+llm = ChatOpenAI(model="gpt-4o-mini", api_key=OPENAI_API_KEY)
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small", api_key=OPENAI_API_KEY)
 
 # ---- connect to existing Qdrant collection ----
@@ -34,12 +35,29 @@ qdrant = QdrantVectorStore.from_existing_collection(
 
 retriever = qdrant.as_retriever(search_type="mmr", search_kwargs={"k": 4, "fetch_k": 20})
 
-# Build the conversational retrieval chain (simple setup)
+# Custom prompt template
+custom_prompt = PromptTemplate(
+    input_variables=["context", "question"],
+    template=(
+        "You are MovieMaster, an expert movie recommender that speaks English only.\n"
+        "Your task: read the provided movie summaries and recommend or explain movies "
+        "that best match the user's question.\n\n"
+        "Use only the information in the context below. Never answer in another language.\n"
+        "If the user asks for recommendations, suggest 2–3 movies from the context and explain briefly why.\n"
+        "If the context doesn't contain relevant movies, say you couldn't find suitable matches.\n\n"
+        "Context:\n{context}\n\n"
+        "Question: {question}\n\n"
+        "Answer in English:"
+    )
+)
+
 qa_chain = ConversationalRetrievalChain.from_llm(
     llm=llm,
     retriever=retriever,
-    return_source_documents=True
+    return_source_documents=True,
+    combine_docs_chain_kwargs={"prompt": custom_prompt}
 )
+
 
 # ---- Streamlit UI ----
 st.set_page_config(page_title="MovieMaster — IMDB RAG Chat", layout="wide")
