@@ -78,7 +78,7 @@ def ingest(csv_path, collection_name="movie_database", chunk_size=800, chunk_ove
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--csv", required=True, help="Path to movies CSV (e.g. data/movies.csv)")
+    parser.add_argument("--csv", required=True, help="Path to movies CSV (e.g. data/imdb_top_1000.csv)")
     parser.add_argument("--collection", default="movie_database", help="Qdrant collection name")
     args = parser.parse_args()
     ingest(args.csv, args.collection)

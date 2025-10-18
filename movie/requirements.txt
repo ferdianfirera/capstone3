@@ -1,4 +1,4 @@
-langchain
+langchain==0.1.17
 langchain-openai
 langchain-qdrant
 langchain-text-splitters
