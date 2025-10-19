@@ -20,34 +20,44 @@ else:
     QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+if not OPENAI_API_KEY:
+    st.error("OPENAI_API_KEY not set. For local runs put it in a .env file; on Streamlit put it in the app secrets.")
+    st.stop()
+
+collection_name = "movie_master"
+
 # ---- LLM + Embeddings ----
-llm = ChatOpenAI(model="gpt-4o-mini", api_key=OPENAI_API_KEY)
+llm = ChatOpenAI(model="gpt-4o-mini", api_key=OPENAI_API_KEY, temperature=0.4)
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small", api_key=OPENAI_API_KEY)
 
 # ---- connect to existing Qdrant collection ----
-collection_name = "movie_database"
-qdrant = QdrantVectorStore.from_existing_collection(
-    embedding=embeddings,
-    collection_name=collection_name,
-    url=QDRANT_URL,
-    api_key=QDRANT_API_KEY
-)
+try:
+    qdrant = QdrantVectorStore.from_existing_collection(
+        embedding=embeddings,
+        collection_name=collection_name,
+        url=QDRANT_URL,
+        api_key=QDRANT_API_KEY,
+    )
+except Exception as e:
+    st.error(
+        "Could not connect to Qdrant collection. Make sure you ran ingestion and that QDRANT_URL/QDRANT_API_KEY are correct.\nError: %s" % e
+    )
+    st.stop()
 
-retriever = qdrant.as_retriever(search_type="mmr", search_kwargs={"k": 4, "fetch_k": 20})
+retriever = qdrant.as_retriever(search_type="similarity_score_threshold", search_kwargs={"k": 5, "score_threshold": 0.6})
 
 # Custom prompt template
 custom_prompt = PromptTemplate(
     input_variables=["context", "question"],
     template=(
         "You are MovieMaster, an expert movie recommender that speaks English only.\n"
-        "Your task: read the provided movie summaries and recommend or explain movies "
-        "that best match the user's question.\n\n"
+        "Your task: read the provided movie summaries (context) and recommend movies that best match the user's question.\n"
         "Use only the information in the context below. Never answer in another language.\n"
-        "If the user asks for recommendations, suggest 2–3 movies from the context and explain briefly why.\n"
-        "If the context doesn't contain relevant movies, say you couldn't find suitable matches.\n\n"
+        "If the user asks for recommendations, recommend at least 2 movies in a numbered list. Each recommendation must be short (1-2 sentences) and reference the reason using context.\n"
+        "If relevant movies are not found in the context, say you couldn't find suitable matches.\n\n"
         "Context:\n{context}\n\n"
         "Question: {question}\n\n"
-        "Answer in English:"
+        "Answer in English, with numbered recommendations when possible:"
     )
 )
 
@@ -76,31 +86,45 @@ with st.sidebar:
         st.session_state.history = []
 
 # input area
-query = st.text_input("Ask a question about the IMDB Top 1000 movies")
+prompt = st.chat_input("Ask me a movie question")
 
-if st.button("Send") and query:
-    with st.spinner("Searching Qdrant + calling LLM..."):
-        # supply chat_history as list of tuples for the chain
-        chat_history = st.session_state.history.copy()
-        # LangChain expects a list of tuples or messages; we use (user,bot) tuples
-        result = qa_chain({"question": query, "chat_history": chat_history})
-        # read answer and sources
-        answer = result.get("answer") or result.get("output_text") or result.get("result") or ""
+# Display past messages
+for role, content in st.session_state.history:
+    with st.chat_message("user" if role == "user" else "assistant"):
+        st.markdown(content)
+
+if prompt:
+    # append user message to history and UI
+    st.session_state.history.append(("user", prompt))
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    with st.spinner("Searching..."):
+        # get the response from the RAG chain
+        chat_pairs = []
+        last_user = None
+        for role, text in st.session_state.history:
+            if role == "user":
+                last_user = text
+            elif role == "assistant" and last_user:
+                chat_pairs.append((last_user, text))
+                last_user = None
+
+        # Run RAG chain
+        result = qa_chain({"question": prompt, "chat_history": chat_pairs})
+        answer = result.get("answer", "")
+        st.session_state.history.append(("assistant", answer))
+
+        # Display assistant answer
+        with st.chat_message("assistant"):
+            st.markdown(answer)
+
+        # Display retrieved sources
         sources = result.get("source_documents", [])
-
-        # store history
-        st.session_state.history.append((query, answer))
-
-        # show bot answer
-        st.markdown("**Answer:**")
-        st.success(answer)
-
-        # show sources (title/year + snippet)
         if sources:
-            st.markdown("**Sources (retrieved chunks):**")
+            st.markdown("**Sources:**")
             for doc in sources:
                 meta = doc.metadata or {}
-                title = meta.get("title") or meta.get("name") or meta.get("movie") or "Unknown"
-                year = meta.get("year", "")
-                snippet = (doc.page_content or "")[:400].strip().replace("\n", " ")
-                st.write(f"- **{title}** {year} — {snippet}")
+                title = meta.get("title", "Unknown Title")
+                snippet = (doc.page_content or "").replace("", " ")[:300]
+        st.write(f"- **{title}** — {snippet}")
