@@ -27,26 +27,17 @@ if selected_page == "home":
     st.markdown("### Your AI-Powered Movie Companion")
 
     # Hero section
-    col1, col2 = st.columns([2, 1])
-
-    with col1:
-        st.markdown("""
+    st.markdown("""
         **MovieMaster** is your intelligent movie assistant powered by advanced AI and a comprehensive IMDB database. 
         Whether you're looking for personalized recommendations, detailed movie information, or data insights, 
         we've got you covered!
 
-        ### ✨ Features:
+        ### Features:
         - 🤖 **AI Chat Assistant**: Get personalized movie recommendations and detailed information
         - 📊 **Films Database**: Browse and analyze movies with interactive charts and filters  
         - 🔍 **Smart Search**: Find movies by title, director, actor, genre, and more
         - 📈 **Analytics Dashboard**: Visualize movie trends, ratings, and statistics
         """)
-
-    with col2:
-        st.markdown("## 🎭 Quick Stats")
-        st.info("🎬 Thousands of movies in our database")
-        st.info("⭐ Powered by IMDB ratings")
-        st.info("🤖 AI-driven recommendations")
 
 elif selected_page == "chat":
     # CHAT PAGE CONTENT
